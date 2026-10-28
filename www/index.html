@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sales Tax Invoice Maker</title>
+<style>
+:root{--bg:#f4f5f8;--card:#fff;--tx:#1d2330;--mu:#667085;--bd:#d9dde5;--ac:#2e75b6;--dk:#3a3a3a;--ok:#1a7f4b;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14171c;--card:#1d2127;--tx:#e8ebf0;--mu:#9aa3b2;--bd:#323944;--ac:#5aa2e0;--ok:#4cc58a}}
+:root[data-theme="dark"]{--bg:#14171c;--card:#1d2127;--tx:#e8ebf0;--mu:#9aa3b2;--bd:#323944;--ac:#5aa2e0;--ok:#4cc58a}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Arial,sans-serif}
+main{max-width:1000px;margin:0 auto;padding:18px 14px 40px}
+h1{font-size:22px;margin:0 0 2px}p.sub{color:var(--mu);margin:0 0 16px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px;margin-bottom:14px}
+h2{font-size:15px;margin:0 0 10px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+label{display:block;font-size:12px;color:var(--mu);margin-bottom:3px}
+input,textarea,select{width:100%;padding:8px 9px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--tx);font:inherit}
+textarea{resize:vertical;min-height:38px}
+button{cursor:pointer;border:1px solid var(--bd);background:var(--card);color:var(--tx);padding:8px 14px;border-radius:8px;font:inherit;font-weight:600}
+button.pri{background:var(--ac);border-color:var(--ac);color:#fff}
+button.x{padding:4px 9px;color:#c0392b}
+.drop{border:2px dashed var(--bd);border-radius:10px;padding:18px;text-align:center;color:var(--mu)}
+.drop input{display:none}.drop label{display:inline-block;margin:0;color:var(--ac);font-weight:700;cursor:pointer;font-size:14px}
+.scroll{overflow-x:auto}table{width:100%;border-collapse:collapse;min-width:640px}
+th{background:var(--dk);color:#fff;font-size:12px;padding:7px 6px;text-align:center}
+td{border:1px solid var(--bd);padding:4px;vertical-align:middle}td.n{text-align:center;white-space:nowrap}
+tfoot td{font-weight:700;background:var(--bg)}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px}
+#msg{margin-top:8px;font-size:13px;color:var(--mu)}#msg.ok{color:var(--ok)}
+.chk{display:flex;gap:6px;align-items:center;font-size:13px;color:var(--tx);margin:0}.chk input{width:auto}
+</style></head><body><main>
+<h1>Sales Tax Invoice Maker</h1>
+<p class="sub">Import a quotation PDF or type in quantities and prices, then download a sales tax invoice for Lami Enterprises.</p>
+
+<div class="card"><h2>1. Import from a quotation PDF (optional)</h2>
+<div class="drop"><label for="pdf">Choose quotation PDF</label><input id="pdf" type="file" accept="application/pdf"><div style="font-size:12px;margin-top:4px">Works with typed or exported PDFs. Scanned or handwritten pages can’t be read; enter those items by hand.</div></div>
+<div id="msg"></div></div>
+
+<div class="card"><h2>2. Invoice details</h2><div class="grid">
+<div><label>Invoice number</label><input id="no" placeholder="e.g. 188"></div>
+<div><label>Date (DD-MM-YYYY)</label><input id="dt"></div>
+<div><label>Tax rate %</label><input id="rate" type="number" step="0.01" value="18"></div>
+<div><label>Prices entered are</label><select id="basis"><option value="inc">Tax inclusive (total stays fixed)</option><option value="exc">Tax exclusive (tax added on top)</option></select></div>
+</div>
+<div class="grid" style="margin-top:10px"><div><label>Buyer name &amp; address</label><textarea id="buyer">State Bank Of Pakistan</textarea></div>
+<div><label>Further options</label><label class="chk"><input type="checkbox" id="dash"> Show quantity as “-”</label></div></div></div>
+
+<div class="card"><h2>3. Items</h2><div class="scroll"><table><thead><tr><th>#</th><th style="width:36%">Description</th><th>Qty</th><th>Unit price (as quoted)</th><th>Value of goods</th><th>Tax</th><th>Total</th><th></th></tr></thead>
+<tbody id="rows"></tbody><tfoot id="foot"></tfoot></table></div>
+<div class="row"><button id="add">+ Add item</button><span style="flex:1"></span><button class="pri" id="make">Download invoice PDF</button></div>
+<div id="msg2" style="margin-top:8px;font-size:13px;color:var(--mu)"></div></div>
+</main>
+<script src="lib/jspdf.umd.min.js"></script>
+<script src="lib/jspdf.plugin.autotable.min.js"></script>
+<script src="lib/pdf.min.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+const f2=n=>n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+let items=[{d:'',q:1,p:0}];
+const t=new Date();$('dt').value=String(t.getDate()).padStart(2,'0')+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+t.getFullYear();
+
+function lastNo(){try{return parseInt(localStorage.getItem('lastInv'))||186}catch(e){return 186}}
+function bump(n){const v=parseInt(n);if(v>=lastNo()){try{localStorage.setItem('lastInv',v)}catch(e){}}$('no').value=lastNo()+1}
+$('no').value=lastNo()+1;
+// Same formulas used for every invoice: inclusive = back the tax out of the fixed total; exclusive = add tax on top.
+function calc(){
+  const r=(parseFloat($('rate').value)||0)/100, inc=$('basis').value==='inc';
+  let tv=0,tt=0,tot=0;
+  const lines=items.map(i=>{
+    const q=parseFloat(i.q)||0,p=parseFloat(i.p)||0;let v,tx,tl,u;
+    if(inc){tl=Math.round(q*p*100)/100;v=Math.round(tl/(1+r)*100)/100;tx=Math.round((tl-v)*100)/100;u=q?Math.round(v/q*100)/100:0}
+    else{v=Math.round(q*p*100)/100;tx=Math.round(v*r*100)/100;tl=Math.round((v+tx)*100)/100;u=p}
+    tv+=v;tt+=tx;tot+=tl;return{d:i.d,q,u,v,tx,tl}});
+  return{lines,tv:Math.round(tv*100)/100,tt:Math.round(tt*100)/100,tot:Math.round(tot*100)/100};
+}
+function render(keepFocus){
+  const c=calc();
+  if(!keepFocus){$('rows').innerHTML=items.map((i,k)=>`<tr><td class="n">${k+1}</td><td><textarea data-k="${k}" data-f="d">${i.d.replace(/</g,'&lt;')}</textarea></td><td><input data-k="${k}" data-f="q" type="number" step="any" value="${i.q}" style="width:70px"></td><td><input data-k="${k}" data-f="p" type="number" step="any" value="${i.p}"></td><td class="n" id="v${k}"></td><td class="n" id="x${k}"></td><td class="n" id="l${k}"></td><td><button class="x" data-del="${k}">✕</button></td></tr>`).join('')}
+  c.lines.forEach((l,k)=>{$('v'+k).textContent=f2(l.v);$('x'+k).textContent=f2(l.tx);$('l'+k).textContent=f2(l.tl)});
+  $('foot').innerHTML=`<tr><td colspan="4" style="text-align:right">Grand total (PKR)</td><td class="n">${f2(c.tv)}</td><td class="n">${f2(c.tt)}</td><td class="n">${f2(c.tot)}</td><td></td></tr>`;
+}
+$('rows').addEventListener('input',e=>{const k=e.target.dataset.k;if(k===undefined)return;items[k][e.target.dataset.f]=e.target.value;render(true)});
+$('rows').addEventListener('click',e=>{const d=e.target.dataset.del;if(d===undefined)return;items.splice(+d,1);if(!items.length)items.push({d:'',q:1,p:0});render()});
+$('add').onclick=()=>{items.push({d:'',q:1,p:0});render()};
+['rate','basis'].forEach(i=>$(i).addEventListener('input',()=>render(true)));
+
+// ---- PDF import: finds (qty, unit price, total) triples where qty x price = total ----
+pdfjsLib.GlobalWorkerOptions.workerSrc='lib/pdf.worker.min.js';
+$('pdf').addEventListener('change',async e=>{
+  const file=e.target.files[0];if(!file)return;const m=$('msg');m.className='';m.textContent='Reading PDF…';
+  try{
+    const pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;let txt='';
+    for(let p=1;p<=pdf.numPages;p++){const c=await (await pdf.getPage(p)).getTextContent();txt+=c.items.map(x=>x.str).join(' ')+' '}
+    txt=txt.replace(/Rs\.?/gi,' ').replace(/[•▪●]/g,', ').replace(/\s+/g,' ');
+    const h=txt.search(/UNIT PRICE\s+TOTAL/i);let prev=h>=0?h+txt.slice(h).match(/UNIT PRICE\s+TOTAL/i)[0].length:0;
+    const nums=[...txt.matchAll(/\d[\d,]*(?:\.\d+)?/g)].map(x=>({v:parseFloat(x[0].replace(/,/g,'')),s:x.index,e:x.index+x[0].length})).filter(x=>x.s>=prev);
+    const found=[];
+    for(let i=0;i+2<nums.length;i++){const a=nums[i],b=nums[i+1],c=nums[i+2];
+      if(a.v>0&&a.v<100000&&b.v>0&&Math.abs(a.v*b.v-c.v)<=1){
+        let d=txt.slice(prev,a.s).replace(/^\s*\d+\s+/,'').replace(/all tax inclusive|tax inclusive/ig,'').replace(/^[\s,]+|[\s,]+$/g,'').replace(/,\s*,/g,',').replace(/:\s*,/g,':');
+        found.push({d,q:a.v,p:b.v});prev=c.e;i+=2}}
+    const bm=txt.match(/M\/s:?\s*(.+?)\s+(?:S\.?No|Sr)/i),dm=txt.match(/\b\d{1,2}[-\/]\d{1,2}[-\/]\d{4}\b/);
+    if(!found.length){m.textContent='No item rows found. Enter the items by hand below.';return}
+    items=found;if(bm)$('buyer').value=bm[1].trim();if(/inclusive/i.test(txt))$('basis').value='inc';
+    render();m.className='ok';m.textContent=`Imported ${found.length} item(s)`+(bm?` for ${bm[1].trim()}`:'')+'. Please check the details below'+(dm?` (quotation date was ${dm[0]}).`:'.');
+  }catch(err){m.textContent='Could not read that PDF. Enter the items by hand below.'}
+});
+
+// ---- PDF output ----
+$('make').onclick=async()=>{
+  const no=$('no').value.trim(),m2=$('msg2');
+  if(!no){m2.textContent='Please enter an invoice number first.';return}
+  const c=calc(),dash=$('dash').checked,{jsPDF}=window.jspdf,doc=new jsPDF({unit:'mm',format:'a4'});
+  doc.setFillColor(58,58,58);doc.rect(15,12,180,18,'F');doc.setTextColor(255);doc.setFont('helvetica','bold');doc.setFontSize(18);
+  doc.text('SALES TAX INVOICE',60,24,{align:'center'});doc.setFontSize(9);
+  doc.text(['Invoice No: '+no,'Date: '+$('dt').value,'Time of Supply: ____________'],108,17.5);
+  doc.setFontSize(11);doc.text('ORIGINAL',175,22,{align:'center'});doc.setDrawColor(255);doc.setLineWidth(.3);doc.line(105,12,105,30);doc.line(155,12,155,30);
+  const g=[236,236,236],ln={lineColor:[0,0,0],lineWidth:.3,textColor:0,fontSize:9,cellPadding:2.2};
+  doc.autoTable({startY:30,margin:{left:15,right:15},theme:'grid',styles:ln,tableWidth:180,
+    body:[['Seller:\nM/S Lami Enterprises\nR-283/11-C3 North Karachi',"Buyer's Name & Address",$('buyer').value],['Phone: 0333-2327228','Telephone No.',''],['NTN/CNIC: 7354854-0','N.T.N No. or CNIC No.','']],
+    columnStyles:{0:{cellWidth:60,fillColor:g},1:{cellWidth:45,fontStyle:'bold',fillColor:g},2:{cellWidth:75}}});
+  const rate=(parseFloat($('rate').value)||0)+'%';
+  const body=c.lines.map((l,k)=>[k+1,l.d,dash?'-':l.q,f2(l.u),f2(l.v),rate,f2(l.tx),'-',f2(l.tl)]);
+  body.push([{content:'GRAND TOTAL (PKR)',colSpan:4,styles:{fontStyle:'bold',halign:'left'}},{content:f2(c.tv),styles:{fontStyle:'bold'}},'',{content:f2(c.tt),styles:{fontStyle:'bold'}},'',{content:f2(c.tot),styles:{fontStyle:'bold'}}]);
+  doc.autoTable({startY:doc.lastAutoTable.finalY+6,margin:{left:15,right:15},theme:'grid',tableWidth:180,
+    styles:{...ln,fontSize:7.5,halign:'center',valign:'middle',cellPadding:2},
+    headStyles:{fillColor:[74,74,74],textColor:255,fontStyle:'bold',fontSize:7.5},
+    head:[['Sr#','Description of Goods','Qty','Unit Price (PKR)','Value of Goods (PKR)','Rate of Sales Tax','Amount of Sale Tax (PKR)','Further Tax on Unregistered Persons','Total (PKR)']],body,
+    columnStyles:{0:{cellWidth:8},1:{cellWidth:48,halign:'left'},2:{cellWidth:12},3:{cellWidth:20},4:{cellWidth:24},5:{cellWidth:13},6:{cellWidth:21},7:{cellWidth:14},8:{cellWidth:20}}});
+  const y=doc.lastAutoTable.finalY+22;doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(0);
+  doc.text('Prepared By: ____________________',20,y);doc.text('Checked By: ____________________',80,y);doc.text('Authorized Signature: ____________________',135,y);
+  const fn=`sale_tax_invoice_${no}.pdf`,C=window.Capacitor,P=C&&C.Plugins;
+  try{
+    if(C&&C.isNativePlatform&&C.isNativePlatform()&&P&&P.Filesystem){
+      const r=await P.Filesystem.writeFile({path:fn,data:doc.output('datauristring').split(',')[1],directory:'DOCUMENTS',recursive:true});
+      m2.textContent='Saved to Documents/'+fn;
+      if(P.Share){try{await P.Share.share({title:fn,url:r.uri})}catch(_){}}
+    }else{const a=document.createElement('a');a.href=URL.createObjectURL(doc.output('blob'));a.download=fn;document.body.appendChild(a);a.click();a.remove();m2.textContent='Invoice ready.'}
+    bump(no);
+  }catch(e){m2.textContent='The PDF could not be saved.'}
+};
+render();
+</script></body></html>
